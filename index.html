@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f7">
+  <title>PDF Viewer</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23282d36'/%3E%3Cpath d='M18 12h20l10 10v30H18z' fill='white'/%3E%3Cpath d='M38 12v10h10' fill='none' stroke='%23282d36' stroke-width='3'/%3E%3Cpath d='M25 32h16M25 39h16M25 46h12' stroke='%23282d36' stroke-width='3'/%3E%3C/svg%3E">
+  <style>
+    :root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:#242830;background:#f3f5ff;font-size:16px}
+    *{box-sizing:border-box}body{margin:0}button,input{font:inherit}button{cursor:pointer}
+    .top{height:75px;background:#f6f6f8;display:flex;align-items:center;justify-content:center;position:relative;border-bottom:1px solid #e9e9ef}
+    .top-inner{text-align:center;max-width:calc(100% - 112px)}h1{font-size:22px;line-height:1.2;margin:0 0 3px;font-weight:700;white-space:nowrap}
+    .sub{font-size:12px;color:#5c626c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .toolbar{height:54px;display:flex;align-items:center;gap:12px;padding:0 16px;background:#f8f8ff;border-bottom:1px solid #d9dbea;position:sticky;top:0;z-index:10}
+    .tool{border:0;background:none;color:#414750;font-size:22px;line-height:1;min-width:32px;min-height:38px;padding:0 4px}
+    .tool svg{display:block;width:22px;height:22px;margin:auto}
+    .spacer{flex:1}.page-input{width:54px;height:36px;border:1px solid #c9ccd6;border-radius:3px;background:#fff;text-align:center;font-weight:700;font-size:20px;color:#15171b}
+    .count{font-size:18px;font-weight:600;white-space:nowrap}.divider{height:28px;border-left:1px solid #c9cbd3}
+    .document{max-width:900px;margin:12px auto 30px;display:flex;flex-direction:column;gap:16px;align-items:center}
+    .sheet{width:100%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,0.1);overflow:hidden}.sheet img{display:block;width:100%;height:auto;max-width:none}
+    .sheet.zoomed img{width:var(--zoom-width)}
+    .thumbs{display:none;position:fixed;left:0;top:130px;bottom:0;z-index:12;width:200px;overflow-y:auto;background:#eef0f7;border-right:1px solid #cfd2da;padding:10px}.thumbs.open{display:block}.thumb{width:100%;border:1px solid #cdd1dd;background:white;padding:4px;margin-bottom:10px;text-align:center;color:#4c5360;font-size:12px}.thumb img{display:block;width:100%;margin-bottom:4px}
+    .list{max-width:720px;margin:28px auto;padding:0 16px}.list h2{font-size:20px}.list a{display:block;background:white;padding:14px;margin:8px 0;border:1px solid #d6d9e3;border-radius:5px;color:#244d75;text-decoration:none;line-height:1.5}
+    @media(max-width:650px){.top{height:70px}.toolbar{height:52px;gap:8px;padding:0 10px}.document{margin:10px auto 24px;gap:12px}.page-input{width:48px;font-size:18px}.count{font-size:16px}.thumbs{top:122px;width:45vw;max-width:200px}.tool{min-width:28px}}
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="top-inner">
+      <h1>PDF Viewer</h1>
+      <div class="sub" id="subtitle">lims.szswgcjc.com</div>
+    </div>
+  </header>
+  <nav class="toolbar" id="toolbar" aria-label="阅读工具栏">
+    <button class="tool" id="toggle-thumbs" aria-label="页面缩略图" title="页面缩略图"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="18" rx="1"/><path d="M8 3v18"/></svg></button>
+    <input class="page-input" id="page" type="number" min="1" max="6" value="1" aria-label="当前页码"><span class="count">/ 6</span><span class="spacer"></span>
+    <button class="tool" id="minus" aria-label="缩小" title="缩小">−</button><span class="divider"></span><button class="tool" id="plus" aria-label="放大" title="放大">＋</button>
+  </nav>
+  <aside class="thumbs" id="thumbs" aria-label="页面缩略图"></aside>
+  <main id="main"></main>
+  <script>
+    const reports = {
+      'SZ-JS26-00028': '拦污栅、出水闸电动葫芦轨道',
+      'SZ-JS26-00032': '拦污栅门槽',
+      'SZ-JS26-00036': '检修闸门电动葫芦轨道',
+      'SZ-JS26-00040': '进水口检修闸门门槽',
+      'SZ-JS26-00052': '浮箱拍门'
+    };
+    const params = new URLSearchParams(location.search);
+    const id = params.get('r') || 'SZ-JS26-00028';
+    const main = document.getElementById('main');
+    const toolbar = document.getElementById('toolbar');
+    const thumbs = document.getElementById('thumbs');
+    const page = document.getElementById('page');
+
+    if (!Object.hasOwn(reports, id)) {
+      const list = document.createElement('section');
+      list.className = 'list';
+      list.innerHTML = '<h2>检测报告列表</h2>';
+      for (const [key, name] of Object.entries(reports)) {
+        const a = document.createElement('a');
+        a.href = '?r=' + key;
+        a.textContent = key + ' · ' + name;
+        list.append(a);
+      }
+      main.append(list);
+    } else {
+      const documentEl = document.createElement('div');
+      documentEl.className = 'document';
+      main.append(documentEl);
+      for (let n = 1; n <= 6; n++) {
+        const section = document.createElement('section');
+        section.className = 'sheet';
+        section.dataset.page = String(n);
+        section.setAttribute('aria-label', '第 ' + n + ' 页');
+        const img = document.createElement('img');
+        img.src = 'pages/' + id + '/page-' + n + '.jpg';
+        img.alt = id + ' 第 ' + n + ' 页';
+        img.loading = n < 3 ? 'eager' : 'lazy';
+        section.append(img);
+        documentEl.append(section);
+
+        const thumb = document.createElement('button');
+        thumb.className = 'thumb';
+        thumb.innerHTML = '<img alt="" src="pages/' + id + '/page-' + n + '.jpg">第 ' + n + ' 页';
+        thumb.onclick = () => {
+          section.scrollIntoView({ behavior: 'smooth' });
+          thumbs.classList.remove('open');
+        };
+        thumbs.append(thumb);
+      }
+
+      const sheets = [...documentEl.children];
+      page.onchange = () => {
+        const n = Math.max(1, Math.min(6, Number(page.value) || 1));
+        page.value = n;
+        sheets[n - 1].scrollIntoView({ behavior: 'smooth' });
+      };
+
+      document.getElementById('toggle-thumbs').onclick = () => thumbs.classList.toggle('open');
+
+      let zoom = 100;
+      function setZoom(n) {
+        zoom = Math.max(100, Math.min(180, n));
+        for (const s of sheets) {
+          s.classList.toggle('zoomed', zoom > 100);
+          s.style.setProperty('--zoom-width', zoom + '%');
+        }
+      }
+      document.getElementById('minus').onclick = () => setZoom(zoom - 20);
+      document.getElementById('plus').onclick = () => setZoom(zoom + 20);
+
+      const observer = new IntersectionObserver(entries => {
+        const visible = entries.filter(e => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        if (visible.length) page.value = visible[0].target.dataset.page;
+      }, { rootMargin: '-120px 0px -35% 0px', threshold: [0, 0.15, 0.4, 0.8] });
+      sheets.forEach(s => observer.observe(s));
+    }
+  </script>
+</body>
+</html>
